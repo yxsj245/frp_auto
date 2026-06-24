@@ -46,7 +46,7 @@ jobs:
         uses: docker/login-action@v4
         with:
           registry: registry.cn-beijing.aliyuncs.com
-          username: xiaozhu245
+          username: yxsj2459561
           password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
 
       # build Docker images
