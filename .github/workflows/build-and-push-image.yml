@@ -90,22 +90,38 @@ jobs:
           make -C web/frps build
           make -C web/frpc build
 
-      - name: Build frpc binary
+      - name: Cross-compile binaries for selected platforms
         run: |
-          go build -trimpath -ldflags "-s -w" -tags "frpc" -o bin/frpc ./cmd/frpc
+          IFS=',' read -ra PLATFORMS <<< "${{ inputs.platforms }}"
+          mkdir -p bin
+          for platform in "${PLATFORMS[@]}"; do
+            platform=$(echo "$platform" | xargs)
+            os="${platform%%/*}"
+            arch_variant="${platform#*/}"
+            goarch="${arch_variant%%/*}"
+            goarm=""
+            if [[ "$arch_variant" == *"/"* ]]; then
+              goarm="${arch_variant#*/}"
+            fi
 
-      - name: Build frps binary
-        run: |
-          go build -trimpath -ldflags "-s -w" -tags "frps" -o bin/frps ./cmd/frps
+            export GOOS="$os"
+            export GOARCH="$goarch"
+            if [ -n "$goarm" ]; then
+              export GOARM="$goarm"
+            fi
 
-      - name: Upload frpc binary
+            bin_suffix="${os}_${goarch}"
+            [ -n "$goarm" ] && bin_suffix="${bin_suffix}_v${goarm}"
+
+            echo "Building frpc for $os/$goarch${goarm:+ v$goarm}..."
+            go build -trimpath -ldflags "-s -w" -tags "frpc" -o "bin/frpc_${bin_suffix}" ./cmd/frpc
+
+            echo "Building frps for $os/$goarch${goarm:+ v$goarm}..."
+            go build -trimpath -ldflags "-s -w" -tags "frps" -o "bin/frps_${bin_suffix}" ./cmd/frps
+          done
+
+      - name: Upload all binaries
         uses: actions/upload-artifact@v4
         with:
-          name: frpc-linux-amd64
-          path: bin/frpc
-
-      - name: Upload frps binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: frps-linux-amd64
-          path: bin/frps
+          name: binaries
+          path: bin/*
