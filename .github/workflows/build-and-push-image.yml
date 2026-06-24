@@ -8,7 +8,7 @@ on:
         required: true
         default: 'latest'
       platforms:
-        description: 'Build platforms'
+        description: 'Docker build platforms (Linux only)'
         required: true
         type: choice
         options:
@@ -17,6 +17,11 @@ on:
           - 'linux/amd64,linux/arm/v7,linux/arm64'
           - 'linux/amd64,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x'
         default: 'linux/amd64'
+      build_windows:
+        description: 'Also build Windows amd64 binary'
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -92,8 +97,10 @@ jobs:
 
       - name: Cross-compile binaries for selected platforms
         run: |
-          IFS=',' read -ra PLATFORMS <<< "${{ inputs.platforms }}"
           mkdir -p bin
+
+          # Linux platforms from input
+          IFS=',' read -ra PLATFORMS <<< "${{ inputs.platforms }}"
           for platform in "${PLATFORMS[@]}"; do
             platform=$(echo "$platform" | xargs)
             os="${platform%%/*}"
@@ -119,6 +126,15 @@ jobs:
             echo "Building frps for $os/$goarch${goarm:+ v$goarm}..."
             go build -trimpath -ldflags "-s -w" -tags "frps" -o "bin/frps_${bin_suffix}" ./cmd/frps
           done
+
+          # Windows amd64 binary (optional)
+          if [ "${{ inputs.build_windows }}" = "true" ]; then
+            echo "Building frpc for windows/amd64..."
+            GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -tags "frpc" -o "bin/frpc_windows_amd64.exe" ./cmd/frpc
+
+            echo "Building frps for windows/amd64..."
+            GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -tags "frps" -o "bin/frps_windows_amd64.exe" ./cmd/frps
+          fi
 
       - name: Upload all binaries
         uses: actions/upload-artifact@v4
