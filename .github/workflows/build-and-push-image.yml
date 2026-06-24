@@ -7,6 +7,16 @@ on:
         description: 'Image tag (e.g. latest, v0.62.0)'
         required: true
         default: 'latest'
+      platforms:
+        description: 'Build platforms'
+        required: true
+        type: choice
+        options:
+          - 'linux/amd64'
+          - 'linux/amd64,linux/arm64'
+          - 'linux/amd64,linux/arm/v7,linux/arm64'
+          - 'linux/amd64,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x'
+        default: 'linux/amd64'
 
 permissions:
   contents: read
@@ -55,7 +65,7 @@ jobs:
         with:
           context: .
           file: ./dockerfiles/Dockerfile-for-frpc
-          platforms: linux/amd64,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x
+          platforms: ${{ inputs.platforms }}
           push: true
           tags: |
             registry.cn-beijing.aliyuncs.com/xiaozhu245/frp_auto:frpc-${{ env.TAG_NAME }}
@@ -67,7 +77,7 @@ jobs:
         with:
           context: .
           file: ./dockerfiles/Dockerfile-for-frps
-          platforms: linux/amd64,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x
+          platforms: ${{ inputs.platforms }}
           push: true
           tags: |
             registry.cn-beijing.aliyuncs.com/xiaozhu245/frp_auto:frps-${{ env.TAG_NAME }}
