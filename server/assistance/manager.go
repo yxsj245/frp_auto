@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"net"
 	"sync"
 	"time"
 )
@@ -42,12 +43,14 @@ type Manager struct {
 	mu           sync.RWMutex
 	applications map[string]*Application // code -> application
 	proxyIndex   map[string]string       // proxyName -> code
+	publicAddr   string                  // public IP for remote address display
 }
 
-func NewManager() *Manager {
+func NewManager(publicAddr string) *Manager {
 	return &Manager{
 		applications: make(map[string]*Application),
 		proxyIndex:   make(map[string]string),
+		publicAddr:   publicAddr,
 	}
 }
 
@@ -160,9 +163,15 @@ func (m *Manager) OnProxyRegistered(proxyName, remoteAddr string, remotePort int
 		return
 	}
 
+	// Build display address: use publicAddr if configured, else use raw remoteAddr
+	displayAddr := remoteAddr
+	if m.publicAddr != "" && remotePort > 0 {
+		displayAddr = net.JoinHostPort(m.publicAddr, fmt.Sprintf("%d", remotePort))
+	}
+
 	for i := range app.Ports {
 		if app.Ports[i].ProxyName == proxyName {
-			app.Ports[i].RemoteAddr = remoteAddr
+			app.Ports[i].RemoteAddr = displayAddr
 			app.Ports[i].RemotePort = remotePort
 			break
 		}

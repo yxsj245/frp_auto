@@ -1,5 +1,9 @@
 bindPort = 7000
 
+# 服务器的公网 IP 或域名，用于在前端显示远程地址（格式：publicAddr:端口）
+# 如果不配置，则显示 frps 实际绑定的地址
+publicAddr = "192.168.10.202"
+
 # 端口分配范围
 allowPorts = [{ start = 10000, end = 20000 }]
 

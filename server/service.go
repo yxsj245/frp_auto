@@ -167,7 +167,7 @@ func NewService(cfg *v1.ServerConfig) (*Service, error) {
 
 	svr := &Service{
 		ctlManager:     NewControlManager(),
-		assistanceMgr:  assistance.NewManager(),
+		assistanceMgr:  assistance.NewManager(cfg.PublicAddr),
 		clientRegistry: registry.NewClientRegistry(),
 		pxyManager:     proxy.NewManager(),
 		pluginManager:  plugin.NewManager(),

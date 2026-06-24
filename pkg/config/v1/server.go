@@ -95,6 +95,11 @@ type ServerConfig struct {
 
 	AllowPorts []types.PortsRange `json:"allowPorts,omitempty"`
 
+	// PublicAddr is the public IP or domain that clients use to connect.
+	// When set, the remote address in assistance responses will be formatted
+	// as "publicAddr:port" instead of the internal bind address.
+	PublicAddr string `json:"publicAddr,omitempty"`
+
 	HTTPPlugins []HTTPPluginOptions `json:"httpPlugins,omitempty"`
 }
 
