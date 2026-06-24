@@ -46,7 +46,7 @@ jobs:
         uses: docker/login-action@v4
         with:
           registry: registry.cn-beijing.aliyuncs.com
-          username: yxsj2459561
+          username: xiaozhu245
           password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
 
       # build Docker images
@@ -58,7 +58,9 @@ jobs:
           platforms: linux/amd64,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x
           push: true
           tags: |
-            registry.cn-beijing.aliyuncs.com/yxsj2459561/frpc:${{ env.TAG_NAME }}
+            registry.cn-beijing.aliyuncs.com/xiaozhu245/frp_auto:frpc-${{ env.TAG_NAME }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build and push frps
         uses: docker/build-push-action@v7
@@ -68,7 +70,9 @@ jobs:
           platforms: linux/amd64,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x
           push: true
           tags: |
-            registry.cn-beijing.aliyuncs.com/yxsj2459561/frps:${{ env.TAG_NAME }}
+            registry.cn-beijing.aliyuncs.com/xiaozhu245/frp_auto:frps-${{ env.TAG_NAME }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # build binaries
       - name: Build web assets
