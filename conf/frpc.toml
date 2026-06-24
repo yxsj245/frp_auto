@@ -1,9 +1,9 @@
 serverAddr = "127.0.0.1"
 serverPort = 7000
+auth.token = ""
 
-[[proxies]]
-name = "test-tcp"
-type = "tcp"
-localIP = "127.0.0.1"
-localPort = 22
-remotePort = 6000
+# Web管理面板（无密码，不启用认证）
+webServer.addr = "127.0.0.1"
+webServer.port = 7400
+serverAddr = "127.0.0.1"
+serverPort = 7000

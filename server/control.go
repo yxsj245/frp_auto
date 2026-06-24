@@ -34,6 +34,7 @@ import (
 	"github.com/fatedier/frp/pkg/util/util"
 	"github.com/fatedier/frp/pkg/util/wait"
 	"github.com/fatedier/frp/pkg/util/xlog"
+	"github.com/fatedier/frp/server/assistance"
 	"github.com/fatedier/frp/server/controller"
 	"github.com/fatedier/frp/server/metrics"
 	"github.com/fatedier/frp/server/proxy"
@@ -82,6 +83,11 @@ func (cm *ControlManager) GetByID(runID string) (ctl *Control, ok bool) {
 	return
 }
 
+// GetByRunID is an alias for GetByID for callers that prefer runID naming.
+func (cm *ControlManager) GetByRunID(runID string) (ctl *Control, ok bool) {
+	return cm.GetByID(runID)
+}
+
 func (cm *ControlManager) Close() error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -112,6 +118,8 @@ type SessionContext struct {
 	ServerCfg *v1.ServerConfig
 	// client registry
 	ClientRegistry *registry.ClientRegistry
+	// assistance manager
+	AssistanceMgr *assistance.Manager
 	// negotiated wire protocol for this client session
 	WireProtocol string
 }
@@ -331,6 +339,8 @@ func (ctl *Control) worker() {
 		ctl.closeProxy(pxy)
 	}
 
+	ctl.sessionCtx.AssistanceMgr.RemoveByRunID(ctl.runID)
+
 	metrics.Server.CloseClient()
 	ctl.sessionCtx.ClientRegistry.MarkOfflineByRunID(ctl.runID)
 	xl.Infof("client exit success")
@@ -344,6 +354,7 @@ func (ctl *Control) registerMsgHandlers() {
 	ctl.msgDispatcher.RegisterHandler(&msg.NatHoleClient{}, msg.AsyncHandler(ctl.handleNatHoleClient))
 	ctl.msgDispatcher.RegisterHandler(&msg.NatHoleReport{}, msg.AsyncHandler(ctl.handleNatHoleReport))
 	ctl.msgDispatcher.RegisterHandler(&msg.CloseProxy{}, ctl.handleCloseProxy)
+	ctl.msgDispatcher.RegisterHandler(&msg.PortApplication{}, ctl.handlePortApplication)
 }
 
 func (ctl *Control) handleNewProxy(m msg.Message) {
@@ -428,7 +439,40 @@ func (ctl *Control) handleCloseProxy(m msg.Message) {
 	xl.Infof("close proxy [%s] success", inMsg.ProxyName)
 }
 
+func (ctl *Control) handlePortApplication(m msg.Message) {
+	inMsg := m.(*msg.PortApplication)
+
+	var clientKey string
+	if ctl.sessionCtx.LoginMsg.ClientID != "" {
+		clientKey = ctl.sessionCtx.LoginMsg.User + "." + ctl.sessionCtx.LoginMsg.ClientID
+	} else {
+		clientKey = ctl.sessionCtx.LoginMsg.User + "." + ctl.runID
+	}
+
+	app := ctl.sessionCtx.AssistanceMgr.CreateApplication(
+		ctl.runID,
+		ctl.sessionCtx.LoginMsg.User,
+		clientKey,
+		inMsg.Ports,
+		inMsg.Types,
+		inMsg.Remark,
+	)
+
+	resp := &msg.PortApplicationResp{
+		TransactionID: inMsg.TransactionID,
+		Code:          app.Code,
+		Status:        string(app.Status),
+	}
+	_ = ctl.msgDispatcher.Send(resp)
+}
+
 func (ctl *Control) RegisterProxy(pxyMsg *msg.NewProxy) (remoteAddr string, err error) {
+	// Only approved assistance proxies are allowed.
+	if ctl.sessionCtx.AssistanceMgr != nil && !ctl.sessionCtx.AssistanceMgr.IsApprovedProxy(pxyMsg.ProxyName) {
+		err = fmt.Errorf("proxy [%s] is not approved", pxyMsg.ProxyName)
+		return
+	}
+
 	var pxyConf v1.ProxyConfigurer
 	// Load configures from NewProxy message and validate.
 	pxyConf, err = config.NewProxyConfigurerFromMsg(pxyMsg, ctl.sessionCtx.ServerCfg)
@@ -503,6 +547,15 @@ func (ctl *Control) RegisterProxy(pxyMsg *msg.NewProxy) (remoteAddr string, err 
 	ctl.mu.Lock()
 	ctl.proxies[pxy.GetName()] = pxy
 	ctl.mu.Unlock()
+
+	remotePort := 0
+	switch c := pxyConf.(type) {
+	case *v1.TCPProxyConfig:
+		remotePort = c.RemotePort
+	case *v1.UDPProxyConfig:
+		remotePort = c.RemotePort
+	}
+	ctl.sessionCtx.AssistanceMgr.OnProxyRegistered(pxyMsg.ProxyName, remoteAddr, remotePort)
 	return
 }
 
@@ -522,4 +575,84 @@ func (ctl *Control) CloseProxy(closeMsg *msg.CloseProxy) (err error) {
 
 	ctl.closeProxy(pxy)
 	return
+}
+
+// SendApprovalNotify sends approval notification to the client
+func (ctl *Control) SendApprovalNotify(app *assistance.Application) {
+	ports := make([]msg.ApprovedPort, len(app.Ports))
+	for i, p := range app.Ports {
+		ports[i] = msg.ApprovedPort{
+			ProxyName:  p.ProxyName,
+			LocalPort:  p.LocalPort,
+			RemotePort: p.RemotePort,
+			Type:       p.Type,
+		}
+	}
+	notify := &msg.ApprovalNotify{
+		Code:  app.Code,
+		Ports: ports,
+	}
+	_ = ctl.msgDispatcher.Send(notify)
+}
+
+// SendCloseAssistance sends close assistance notification to the client
+func (ctl *Control) SendCloseAssistance(code string, reason string) {
+	closeMsg := &msg.CloseAssistance{
+		Code:   code,
+		Reason: reason,
+	}
+	_ = ctl.msgDispatcher.Send(closeMsg)
+}
+
+// SendPauseAssistance sends pause assistance notification to the client
+func (ctl *Control) SendPauseAssistance(code string, reason string) {
+	pauseMsg := &msg.PauseAssistance{
+		Code:   code,
+		Reason: reason,
+	}
+	_ = ctl.msgDispatcher.Send(pauseMsg)
+}
+
+// SendResumeAssistance sends resume assistance notification to the client
+func (ctl *Control) SendResumeAssistance(app *assistance.Application) {
+	ports := make([]msg.ApprovedPort, len(app.Ports))
+	for i, p := range app.Ports {
+		ports[i] = msg.ApprovedPort{
+			ProxyName:  p.ProxyName,
+			LocalPort:  p.LocalPort,
+			RemotePort: p.RemotePort,
+			Type:       p.Type,
+		}
+	}
+	resumeMsg := &msg.ResumeAssistance{
+		Code:  app.Code,
+		Ports: ports,
+	}
+	_ = ctl.msgDispatcher.Send(resumeMsg)
+}
+
+// SendDisconnectAssistance sends disconnect notification to the client (forces frpc to exit)
+func (ctl *Control) SendDisconnectAssistance(code string, reason string) {
+	disconnectMsg := &msg.DisconnectAssistance{
+		Code:   code,
+		Reason: reason,
+	}
+	_ = ctl.msgDispatcher.Send(disconnectMsg)
+}
+
+// CloseProxiesByNames closes proxies by their names
+func (ctl *Control) CloseProxiesByNames(names []string) {
+	ctl.mu.Lock()
+	var proxiesToClose []proxy.Proxy
+	for _, name := range names {
+		if pxy, ok := ctl.proxies[name]; ok {
+			proxiesToClose = append(proxiesToClose, pxy)
+			delete(ctl.proxies, name)
+		}
+	}
+	ctl.mu.Unlock()
+
+	for _, pxy := range proxiesToClose {
+		ctl.closeProxy(pxy)
+	}
 }

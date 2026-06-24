@@ -1,7 +1,9 @@
-# 基本配置
 bindPort = 7000
 
-# 可选：启用 Web 管理面板
+# 端口分配范围
+allowPorts = [{ start = 10000, end = 20000 }]
+
+# Web管理面板
 webServer.addr = "0.0.0.0"
 webServer.port = 7500
 webServer.user = "admin"

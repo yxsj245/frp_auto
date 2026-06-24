@@ -49,6 +49,7 @@ import (
 	"github.com/fatedier/frp/pkg/util/version"
 	"github.com/fatedier/frp/pkg/util/vhost"
 	"github.com/fatedier/frp/pkg/util/xlog"
+	"github.com/fatedier/frp/server/assistance"
 	"github.com/fatedier/frp/server/controller"
 	"github.com/fatedier/frp/server/group"
 	"github.com/fatedier/frp/server/metrics"
@@ -99,6 +100,9 @@ type Service struct {
 
 	// Manage all controllers
 	ctlManager *ControlManager
+
+	// Manage all assistance applications
+	assistanceMgr *assistance.Manager
 
 	// Track logical clients keyed by user.clientID (runID fallback when raw clientID is empty).
 	clientRegistry *registry.ClientRegistry
@@ -163,6 +167,7 @@ func NewService(cfg *v1.ServerConfig) (*Service, error) {
 
 	svr := &Service{
 		ctlManager:     NewControlManager(),
+		assistanceMgr:  assistance.NewManager(),
 		clientRegistry: registry.NewClientRegistry(),
 		pxyManager:     proxy.NewManager(),
 		pluginManager:  plugin.NewManager(),
@@ -777,6 +782,7 @@ func (svr *Service) RegisterControl(
 		LoginMsg:       loginMsg,
 		ServerCfg:      svr.cfg,
 		ClientRegistry: svr.clientRegistry,
+		AssistanceMgr:  svr.assistanceMgr,
 		WireProtocol:   wireProtocol,
 	})
 	if err != nil {
@@ -800,6 +806,16 @@ func (svr *Service) RegisterControl(
 	}
 
 	return ctl, nil
+}
+
+// GetControlManager returns the control manager of the service.
+func (svr *Service) GetControlManager() *ControlManager {
+	return svr.ctlManager
+}
+
+// GetAssistanceMgr returns the assistance manager of the service.
+func (svr *Service) GetAssistanceMgr() *assistance.Manager {
+	return svr.assistanceMgr
 }
 
 // RegisterWorkConn register a new work connection to control and proxies need it.

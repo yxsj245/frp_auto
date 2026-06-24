@@ -20,45 +20,59 @@ import (
 )
 
 const (
-	TypeLogin              byte = 'o'
-	TypeLoginResp          byte = '1'
-	TypeNewProxy           byte = 'p'
-	TypeNewProxyResp       byte = '2'
-	TypeCloseProxy         byte = 'c'
-	TypeNewWorkConn        byte = 'w'
-	TypeReqWorkConn        byte = 'r'
-	TypeStartWorkConn      byte = 's'
-	TypeNewVisitorConn     byte = 'v'
-	TypeNewVisitorConnResp byte = '3'
-	TypePing               byte = 'h'
-	TypePong               byte = '4'
-	TypeUDPPacket          byte = 'u'
-	TypeNatHoleVisitor     byte = 'i'
-	TypeNatHoleClient      byte = 'n'
-	TypeNatHoleResp        byte = 'm'
-	TypeNatHoleSid         byte = '5'
-	TypeNatHoleReport      byte = '6'
+	TypeLogin                byte = 'o'
+	TypeLoginResp            byte = '1'
+	TypeNewProxy             byte = 'p'
+	TypeNewProxyResp         byte = '2'
+	TypeCloseProxy           byte = 'c'
+	TypeNewWorkConn          byte = 'w'
+	TypeReqWorkConn          byte = 'r'
+	TypeStartWorkConn        byte = 's'
+	TypeNewVisitorConn       byte = 'v'
+	TypeNewVisitorConnResp   byte = '3'
+	TypePing                 byte = 'h'
+	TypePong                 byte = '4'
+	TypeUDPPacket            byte = 'u'
+	TypeNatHoleVisitor       byte = 'i'
+	TypeNatHoleClient        byte = 'n'
+	TypeNatHoleResp          byte = 'm'
+	TypeNatHoleSid           byte = '5'
+	TypeNatHoleReport        byte = '6'
+	TypePortApplication      byte = 'A'
+	TypePortApplicationResp  byte = 'B'
+	TypeApprovalNotify       byte = 'D'
+	TypeCloseAssistance      byte = 'E'
+	TypePauseAssistance      byte = 'F'
+	TypeResumeAssistance     byte = 'G'
+	TypeDisconnectAssistance byte = 'H'
 )
 
 var msgTypeMap = map[byte]any{
-	TypeLogin:              Login{},
-	TypeLoginResp:          LoginResp{},
-	TypeNewProxy:           NewProxy{},
-	TypeNewProxyResp:       NewProxyResp{},
-	TypeCloseProxy:         CloseProxy{},
-	TypeNewWorkConn:        NewWorkConn{},
-	TypeReqWorkConn:        ReqWorkConn{},
-	TypeStartWorkConn:      StartWorkConn{},
-	TypeNewVisitorConn:     NewVisitorConn{},
-	TypeNewVisitorConnResp: NewVisitorConnResp{},
-	TypePing:               Ping{},
-	TypePong:               Pong{},
-	TypeUDPPacket:          UDPPacket{},
-	TypeNatHoleVisitor:     NatHoleVisitor{},
-	TypeNatHoleClient:      NatHoleClient{},
-	TypeNatHoleResp:        NatHoleResp{},
-	TypeNatHoleSid:         NatHoleSid{},
-	TypeNatHoleReport:      NatHoleReport{},
+	TypeLogin:                Login{},
+	TypeLoginResp:            LoginResp{},
+	TypeNewProxy:             NewProxy{},
+	TypeNewProxyResp:         NewProxyResp{},
+	TypeCloseProxy:           CloseProxy{},
+	TypeNewWorkConn:          NewWorkConn{},
+	TypeReqWorkConn:          ReqWorkConn{},
+	TypeStartWorkConn:        StartWorkConn{},
+	TypeNewVisitorConn:       NewVisitorConn{},
+	TypeNewVisitorConnResp:   NewVisitorConnResp{},
+	TypePing:                 Ping{},
+	TypePong:                 Pong{},
+	TypeUDPPacket:            UDPPacket{},
+	TypeNatHoleVisitor:       NatHoleVisitor{},
+	TypeNatHoleClient:        NatHoleClient{},
+	TypeNatHoleResp:          NatHoleResp{},
+	TypeNatHoleSid:           NatHoleSid{},
+	TypeNatHoleReport:        NatHoleReport{},
+	TypePortApplication:      PortApplication{},
+	TypePortApplicationResp:  PortApplicationResp{},
+	TypeApprovalNotify:       ApprovalNotify{},
+	TypeCloseAssistance:      CloseAssistance{},
+	TypePauseAssistance:      PauseAssistance{},
+	TypeResumeAssistance:     ResumeAssistance{},
+	TypeDisconnectAssistance: DisconnectAssistance{},
 }
 
 var TypeNameNatHoleResp = reflect.TypeFor[NatHoleResp]().Name()
@@ -244,4 +258,57 @@ type NatHoleSid struct {
 type NatHoleReport struct {
 	Sid     string `json:"sid,omitempty"`
 	Success bool   `json:"success,omitempty"`
+}
+
+// PortApplication - client sends to server to apply for port forwarding
+type PortApplication struct {
+	TransactionID string   `json:"transaction_id,omitempty"`
+	Ports         []int    `json:"ports,omitempty"`
+	Types         []string `json:"types,omitempty"` // tcp or udp, default [tcp]
+	Remark        string   `json:"remark,omitempty"`
+}
+
+// PortApplicationResp - server responds with a code
+type PortApplicationResp struct {
+	TransactionID string `json:"transaction_id,omitempty"`
+	Code          string `json:"code,omitempty"`
+	Status        string `json:"status,omitempty"`
+	Error         string `json:"error,omitempty"`
+}
+
+// ApprovalNotify - server notifies client that application is approved
+type ApprovalNotify struct {
+	Code  string         `json:"code,omitempty"`
+	Ports []ApprovedPort `json:"ports,omitempty"`
+}
+
+type ApprovedPort struct {
+	ProxyName  string `json:"proxyName,omitempty"`
+	LocalPort  int    `json:"localPort,omitempty"`
+	RemotePort int    `json:"remotePort,omitempty"`
+	Type       string `json:"type,omitempty"` // tcp or udp
+}
+
+// CloseAssistance - server notifies client to close assistance
+type CloseAssistance struct {
+	Code   string `json:"code,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// PauseAssistance - server notifies client to pause assistance (close proxies temporarily)
+type PauseAssistance struct {
+	Code   string `json:"code,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// ResumeAssistance - server notifies client to resume assistance (re-create proxies)
+type ResumeAssistance struct {
+	Code  string         `json:"code,omitempty"`
+	Ports []ApprovedPort `json:"ports,omitempty"`
+}
+
+// DisconnectAssistance - server tells client to exit the process
+type DisconnectAssistance struct {
+	Code   string `json:"code,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }

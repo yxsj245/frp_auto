@@ -28,6 +28,7 @@ import (
 	httppkg "github.com/fatedier/frp/pkg/util/http"
 	"github.com/fatedier/frp/pkg/util/log"
 	"github.com/fatedier/frp/pkg/util/version"
+	"github.com/fatedier/frp/server/assistance"
 	"github.com/fatedier/frp/server/http/model"
 	"github.com/fatedier/frp/server/proxy"
 	"github.com/fatedier/frp/server/registry"
@@ -38,21 +39,40 @@ type Controller struct {
 	serverCfg      *v1.ServerConfig
 	clientRegistry *registry.ClientRegistry
 	pxyManager     ProxyManager
+	assistanceMgr  *assistance.Manager
+	ctlManager     AssistanceControlManager
 }
 
 type ProxyManager interface {
 	GetByName(name string) (proxy.Proxy, bool)
 }
 
+type AssistanceControlManager interface {
+	GetByID(runID string) (AssistanceControl, bool)
+}
+
+type AssistanceControl interface {
+	SendApprovalNotify(app *assistance.Application)
+	SendCloseAssistance(code, reason string)
+	SendPauseAssistance(code, reason string)
+	SendResumeAssistance(app *assistance.Application)
+	SendDisconnectAssistance(code, reason string)
+	CloseProxiesByNames(names []string)
+}
+
 func NewController(
 	serverCfg *v1.ServerConfig,
 	clientRegistry *registry.ClientRegistry,
 	pxyManager ProxyManager,
+	assistanceMgr *assistance.Manager,
+	ctlManager AssistanceControlManager,
 ) *Controller {
 	return &Controller{
 		serverCfg:      serverCfg,
 		clientRegistry: clientRegistry,
 		pxyManager:     pxyManager,
+		assistanceMgr:  assistanceMgr,
+		ctlManager:     ctlManager,
 	}
 }
 
@@ -353,4 +373,228 @@ func getConfFromConfigurer(cfg v1.ProxyConfigurer) any {
 		return &model.XTCPOutConf{BaseOutConf: outBase}
 	}
 	return outBase
+}
+
+// /api/assistance
+func (c *Controller) APIAssistanceList(ctx *httppkg.Context) (any, error) {
+	if c.assistanceMgr == nil {
+		return nil, fmt.Errorf("assistance manager unavailable")
+	}
+
+	apps := c.assistanceMgr.ListAll()
+	result := make([]model.AssistanceInfoResp, 0, len(apps))
+	for _, app := range apps {
+		result = append(result, buildAssistanceInfoResp(app))
+	}
+	return result, nil
+}
+
+// /api/assistance/{code}
+func (c *Controller) APIAssistanceDetail(ctx *httppkg.Context) (any, error) {
+	if c.assistanceMgr == nil {
+		return nil, fmt.Errorf("assistance manager unavailable")
+	}
+
+	code := ctx.Param("code")
+	if code == "" {
+		return nil, fmt.Errorf("missing assistance code")
+	}
+
+	app, ok := c.assistanceMgr.GetByCode(code)
+	if !ok {
+		return nil, httppkg.NewError(http.StatusNotFound, fmt.Sprintf("assistance %s not found", code))
+	}
+
+	return buildAssistanceInfoResp(app), nil
+}
+
+// /api/assistance/{code}/approve
+func (c *Controller) APIAssistanceApprove(ctx *httppkg.Context) (any, error) {
+	if c.assistanceMgr == nil || c.ctlManager == nil {
+		return nil, fmt.Errorf("assistance manager unavailable")
+	}
+
+	code := ctx.Param("code")
+	if code == "" {
+		return nil, fmt.Errorf("missing assistance code")
+	}
+
+	app, err := c.assistanceMgr.Approve(code)
+	if err != nil {
+		return nil, err
+	}
+
+	ctl, ok := c.ctlManager.GetByID(app.RunID)
+	if !ok {
+		return nil, fmt.Errorf("client not connected")
+	}
+	ctl.SendApprovalNotify(app)
+
+	return map[string]string{"status": "approved"}, nil
+}
+
+// /api/assistance/{code}/close
+func (c *Controller) APIAssistanceClose(ctx *httppkg.Context) (any, error) {
+	if c.assistanceMgr == nil || c.ctlManager == nil {
+		return nil, fmt.Errorf("assistance manager unavailable")
+	}
+
+	code := ctx.Param("code")
+	if code == "" {
+		return nil, fmt.Errorf("missing assistance code")
+	}
+
+	app, err := c.assistanceMgr.Close(code)
+	if err != nil {
+		return nil, err
+	}
+
+	ctl, ok := c.ctlManager.GetByID(app.RunID)
+	if ok {
+		names := c.assistanceMgr.GetProxyNames(code)
+		ctl.CloseProxiesByNames(names)
+		ctl.SendCloseAssistance(code, "closed by admin")
+	}
+
+	return map[string]string{"status": "closed"}, nil
+}
+
+// POST /api/assistance/{code}/pause
+func (c *Controller) APIAssistancePause(ctx *httppkg.Context) (any, error) {
+	if c.assistanceMgr == nil || c.ctlManager == nil {
+		return nil, fmt.Errorf("assistance manager unavailable")
+	}
+
+	code := ctx.Param("code")
+	if code == "" {
+		return nil, fmt.Errorf("missing assistance code")
+	}
+
+	app, err := c.assistanceMgr.Pause(code)
+	if err != nil {
+		return nil, err
+	}
+
+	ctl, ok := c.ctlManager.GetByID(app.RunID)
+	if ok {
+		names := c.assistanceMgr.GetProxyNames(code)
+		ctl.CloseProxiesByNames(names)
+		ctl.SendPauseAssistance(code, "paused by admin")
+	}
+
+	return map[string]string{"status": "paused"}, nil
+}
+
+// POST /api/assistance/{code}/resume
+func (c *Controller) APIAssistanceResume(ctx *httppkg.Context) (any, error) {
+	if c.assistanceMgr == nil || c.ctlManager == nil {
+		return nil, fmt.Errorf("assistance manager unavailable")
+	}
+
+	code := ctx.Param("code")
+	if code == "" {
+		return nil, fmt.Errorf("missing assistance code")
+	}
+
+	app, err := c.assistanceMgr.Resume(code)
+	if err != nil {
+		return nil, err
+	}
+
+	ctl, ok := c.ctlManager.GetByID(app.RunID)
+	if !ok {
+		return nil, fmt.Errorf("client not connected")
+	}
+	ctl.SendResumeAssistance(app)
+
+	return map[string]string{"status": "approved"}, nil
+}
+
+// POST /api/assistance/{code}/disconnect
+func (c *Controller) APIAssistanceDisconnect(ctx *httppkg.Context) (any, error) {
+	if c.assistanceMgr == nil || c.ctlManager == nil {
+		return nil, fmt.Errorf("assistance manager unavailable")
+	}
+
+	code := ctx.Param("code")
+	if code == "" {
+		return nil, fmt.Errorf("missing assistance code")
+	}
+
+	// Get the application first to find the runID
+	app, ok := c.assistanceMgr.GetByCode(code)
+	if !ok {
+		return nil, fmt.Errorf("application not found: %s", code)
+	}
+
+	ctl, ok := c.ctlManager.GetByID(app.RunID)
+	if !ok {
+		return nil, fmt.Errorf("client not connected")
+	}
+
+	// Close proxies if any
+	names := c.assistanceMgr.GetProxyNames(code)
+	if len(names) > 0 {
+		ctl.CloseProxiesByNames(names)
+	}
+
+	// Mark as closed
+	c.assistanceMgr.Close(code)
+
+	// Send disconnect signal to force frpc to exit
+	ctl.SendDisconnectAssistance(code, "disconnected by admin")
+
+	return map[string]string{"status": "disconnected"}, nil
+}
+
+// POST /api/assistance/{code}/reject - reject a pending application
+func (c *Controller) APIAssistanceReject(ctx *httppkg.Context) (any, error) {
+	if c.assistanceMgr == nil || c.ctlManager == nil {
+		return nil, fmt.Errorf("assistance manager unavailable")
+	}
+
+	code := ctx.Param("code")
+	if code == "" {
+		return nil, fmt.Errorf("missing assistance code")
+	}
+
+	app, err := c.assistanceMgr.RejectPending(code)
+	if err != nil {
+		return nil, err
+	}
+
+	ctl, ok := c.ctlManager.GetByID(app.RunID)
+	if ok {
+		ctl.SendCloseAssistance(code, "rejected by admin")
+	}
+
+	return map[string]string{"status": "closed"}, nil
+}
+
+func buildAssistanceInfoResp(app *assistance.Application) model.AssistanceInfoResp {
+	ports := make([]model.AssistancePortInfo, len(app.Ports))
+	for i, p := range app.Ports {
+		ports[i] = model.AssistancePortInfo{
+			LocalPort:  p.LocalPort,
+			Type:       p.Type,
+			RemotePort: p.RemotePort,
+			RemoteAddr: p.RemoteAddr,
+		}
+	}
+
+	resp := model.AssistanceInfoResp{
+		Code:      app.Code,
+		User:      app.User,
+		Remark:    app.Remark,
+		Status:    string(app.Status),
+		Ports:     ports,
+		CreatedAt: app.CreatedAt.Unix(),
+	}
+	if app.ApprovedAt != nil {
+		resp.ApprovedAt = app.ApprovedAt.Unix()
+	}
+	if app.ClosedAt != nil {
+		resp.ClosedAt = app.ClosedAt.Unix()
+	}
+	return resp
 }

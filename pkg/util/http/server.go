@@ -83,7 +83,9 @@ func NewServer(cfg v1.WebServerConfig) (*Server, error) {
 			Certificates: []tls.Certificate{cert},
 		}
 	}
-	s.authMiddleware = netpkg.NewHTTPAuthMiddleware(cfg.User, cfg.Password).SetAuthFailDelay(200 * time.Millisecond).Middleware
+	if cfg.User != "" || cfg.Password != "" {
+		s.authMiddleware = netpkg.NewHTTPAuthMiddleware(cfg.User, cfg.Password).SetAuthFailDelay(200 * time.Millisecond).Middleware
+	}
 	return s, nil
 }
 

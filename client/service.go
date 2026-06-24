@@ -27,6 +27,7 @@ import (
 	"github.com/fatedier/golib/crypto"
 	"github.com/samber/lo"
 
+	"github.com/fatedier/frp/client/http/model"
 	"github.com/fatedier/frp/client/proxy"
 	"github.com/fatedier/frp/pkg/auth"
 	"github.com/fatedier/frp/pkg/config"
@@ -180,6 +181,8 @@ func NewService(options ServiceOptions) (*Service, error) {
 	proxyCfgs, visitorCfgs = config.FilterClientConfigurers(options.Common, proxyCfgs, visitorCfgs)
 	proxyCfgs = config.CompleteProxyConfigurers(proxyCfgs)
 	visitorCfgs = config.CompleteVisitorConfigurers(visitorCfgs)
+	// Remote assistance: do not start proxies from configuration file.
+	proxyCfgs = nil
 
 	// Create the web server after all fallible steps so its listener is not
 	// leaked when an earlier error causes NewService to return.
@@ -327,11 +330,6 @@ func (svr *Service) loopLoginUntilSuccess(maxInterval time.Duration, firstLoginE
 		xl.AddPrefix(xlog.LogPrefix{Name: "runID", Value: svr.runID})
 		xl.Infof("login to server success, get run id [%s]", svr.runID)
 
-		svr.cfgMu.RLock()
-		proxyCfgs := svr.proxyCfgs
-		visitorCfgs := svr.visitorCfgs
-		svr.cfgMu.RUnlock()
-
 		ctl, err := NewControl(svr.ctx, sessionCtx)
 		if err != nil {
 			sessionCtx.Conn.Close()
@@ -341,7 +339,7 @@ func (svr *Service) loopLoginUntilSuccess(maxInterval time.Duration, firstLoginE
 		}
 		ctl.SetInWorkConnCallback(svr.handleWorkConnCb)
 
-		ctl.Run(proxyCfgs, visitorCfgs)
+		ctl.Run(nil, nil)
 		// close and replace previous control
 		svr.ctlMu.Lock()
 		if svr.ctl != nil {
@@ -376,6 +374,73 @@ func (svr *Service) UpdateAllConfigurer(proxyCfgs []v1.ProxyConfigurer, visitorC
 		return svr.ctl.UpdateAllConfigurer(proxyCfgs, visitorCfgs)
 	}
 	return nil
+}
+
+// WaitConnected returns a channel that is closed once the service has
+// successfully connected and logged in to the server for the first time.
+// The channel is never closed if the service is stopped before connecting.
+func (svr *Service) WaitConnected() <-chan struct{} {
+	ch := make(chan struct{})
+	go func() {
+		for {
+			svr.ctlMu.RLock()
+			ctl := svr.ctl
+			svr.ctlMu.RUnlock()
+			if ctl != nil {
+				close(ch)
+				return
+			}
+			// Check if service context is done
+			select {
+			case <-svr.ctx.Done():
+				return
+			default:
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+	return ch
+}
+
+func (svr *Service) SubmitApplication(ports []int, types []string, remark string) (string, error) {
+	svr.ctlMu.RLock()
+	ctl := svr.ctl
+	svr.ctlMu.RUnlock()
+
+	if ctl == nil {
+		return "", fmt.Errorf("not connected to server")
+	}
+	return ctl.SubmitApplication(ports, types, remark)
+}
+
+func (svr *Service) GetApplications() []*model.ApplicationInfo {
+	svr.ctlMu.RLock()
+	ctl := svr.ctl
+	svr.ctlMu.RUnlock()
+
+	if ctl == nil {
+		return nil
+	}
+
+	apps := ctl.GetApplications()
+	result := make([]*model.ApplicationInfo, 0, len(apps))
+	for _, app := range apps {
+		portMappings := make([]model.PortMapping, len(app.Ports))
+		for i, p := range app.Ports {
+			portMappings[i] = model.PortMapping{
+				LocalPort:  p.LocalPort,
+				Type:       p.Type,
+				RemotePort: p.RemotePort,
+			}
+		}
+		result = append(result, &model.ApplicationInfo{
+			Code:      app.Code,
+			Status:    app.Status,
+			Ports:     portMappings,
+			CreatedAt: app.CreatedAt.UnixMilli(),
+		})
+	}
+	return result
 }
 
 func (svr *Service) UpdateConfigSource(

@@ -36,7 +36,13 @@ func (svr *Service) registerRouteHandlers(helper *httppkg.RouterRegisterHelper) 
 		subRouter.Handle("/metrics", promhttp.Handler())
 	}
 
-	apiController := adminapi.NewController(svr.cfg, svr.clientRegistry, svr.pxyManager)
+	apiController := adminapi.NewController(
+		svr.cfg,
+		svr.clientRegistry,
+		svr.pxyManager,
+		svr.assistanceMgr,
+		&assistanceControlManager{cm: svr.ctlManager},
+	)
 
 	// apis
 	subRouter.HandleFunc("/api/serverinfo", httppkg.MakeHTTPHandlerFunc(apiController.APIServerInfo)).Methods("GET")
@@ -46,6 +52,14 @@ func (svr *Service) registerRouteHandlers(helper *httppkg.RouterRegisterHelper) 
 	subRouter.HandleFunc("/api/traffic/{name}", httppkg.MakeHTTPHandlerFunc(apiController.APIProxyTraffic)).Methods("GET")
 	subRouter.HandleFunc("/api/clients", httppkg.MakeHTTPHandlerFunc(apiController.APIClientList)).Methods("GET")
 	subRouter.HandleFunc("/api/clients/{key}", httppkg.MakeHTTPHandlerFunc(apiController.APIClientDetail)).Methods("GET")
+	subRouter.HandleFunc("/api/assistance", httppkg.MakeHTTPHandlerFunc(apiController.APIAssistanceList)).Methods("GET")
+	subRouter.HandleFunc("/api/assistance/{code}", httppkg.MakeHTTPHandlerFunc(apiController.APIAssistanceDetail)).Methods("GET")
+	subRouter.HandleFunc("/api/assistance/{code}/approve", httppkg.MakeHTTPHandlerFunc(apiController.APIAssistanceApprove)).Methods("POST")
+	subRouter.HandleFunc("/api/assistance/{code}/close", httppkg.MakeHTTPHandlerFunc(apiController.APIAssistanceClose)).Methods("POST")
+	subRouter.HandleFunc("/api/assistance/{code}/pause", httppkg.MakeHTTPHandlerFunc(apiController.APIAssistancePause)).Methods("POST")
+	subRouter.HandleFunc("/api/assistance/{code}/resume", httppkg.MakeHTTPHandlerFunc(apiController.APIAssistanceResume)).Methods("POST")
+	subRouter.HandleFunc("/api/assistance/{code}/disconnect", httppkg.MakeHTTPHandlerFunc(apiController.APIAssistanceDisconnect)).Methods("POST")
+	subRouter.HandleFunc("/api/assistance/{code}/reject", httppkg.MakeHTTPHandlerFunc(apiController.APIAssistanceReject)).Methods("POST")
 	subRouter.HandleFunc("/api/proxies", httppkg.MakeHTTPHandlerFunc(apiController.DeleteProxies)).Methods("DELETE")
 
 	// view
@@ -57,6 +71,15 @@ func (svr *Service) registerRouteHandlers(helper *httppkg.RouterRegisterHelper) 
 	subRouter.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/static/", http.StatusMovedPermanently)
 	})
+}
+
+type assistanceControlManager struct {
+	cm *ControlManager
+}
+
+func (a *assistanceControlManager) GetByID(runID string) (adminapi.AssistanceControl, bool) {
+	ctl, ok := a.cm.GetByID(runID)
+	return ctl, ok
 }
 
 func healthz(w http.ResponseWriter, _ *http.Request) {

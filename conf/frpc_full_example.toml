@@ -1,3 +1,111 @@
+# ============================================================
+# 本项目已改造为远程协助专用模式
+# ------------------------------------------------------------
+# - 代理配置由服务端审批后自动创建，无需手动配置 [[proxies]] 段落
+# - 可通过 webServer 配置启用客户端管理面板
+# - 可通过 `frpc apply` 命令行提交端口申请
+# - 申请审批通过后，frps 将自动为本客户端创建对应代理
+# ============================================================
+
+# This configuration file is for reference only.
+
+# Optional unique identifier for this frpc instance.
+# clientID = "your_client_id"
+# your proxy name will be changed to {user}.{proxy}
+# user = "your_name"
+
+# A literal address or host name for IPv6 must be enclosed
+# in square brackets, as in "[::1]:80", "[ipv6-host]:http" or "[ipv6-host%zone]:80"
+# For single serverAddr field, no need square brackets, like serverAddr = "::".
+serverAddr = "0.0.0.0"
+serverPort = 7000
+
+# STUN server to help penetrate NAT hole.
+# natHoleStunServer = "stun.easyvoip.com:3478"
+
+# Decide if exit program when first login failed, otherwise continuous relogin to frps
+# default is true
+loginFailExit = true
+
+# console or real logFile path like ./frpc.log
+log.to = "./frpc.log"
+# trace, debug, info, warn, error
+log.level = "info"
+log.maxDays = 3
+# disable log colors when log.to is console, default is false
+log.disablePrintColor = false
+
+auth.method = "token"
+# auth token
+auth.token = ""
+
+# alternatively, you can use tokenSource to load the token from a file
+# this is mutually exclusive with auth.token
+# auth.tokenSource.type = "file"
+# auth.tokenSource.file.path = "/etc/frp/token"
+
+# Set admin address for control frpc's action by http api such as reload
+webServer.addr = "127.0.0.1"
+webServer.port = 7400
+# webServer.user = "admin"
+# webServer.password = "admin"
+# Admin assets directory. By default, these assets are bundled with frpc.
+# webServer.assetsDir = "./static"
+
+# Enable golang pprof handlers in admin listener.
+webServer.pprofEnable = false
+
+# The maximum amount of time a dial to server will wait for a connect to complete. Default value is 10 seconds.
+# transport.dialServerTimeout = 10
+
+# dialServerKeepalive specifies the interval between keep-alive probes for an active network connection between frpc and frps.
+# If negative, keep-alive probes are disabled.
+# transport.dialServerKeepalive = 7200
+
+# connections will be established in advance, default value is zero
+transport.poolCount = 5
+
+# If tcp stream multiplexing is used, default is true, it must be same with frps
+# transport.tcpMux = true
+
+# Communication protocol used to connect to server
+# supports tcp, kcp, quic, websocket and wss now, default is tcp
+transport.protocol = "tcp"
+
+# set client binding ip when connect server, default is empty.
+# only when protocol = tcp or websocket, the value will be used.
+transport.connectServerLocalIP = "0.0.0.0"
+
+# if you want to connect frps by http proxy or socks5 proxy or ntlm proxy, you can set proxyURL here or in global environment variables
+# it only works when protocol is tcp
+# transport.proxyURL = "http://user:passwd@192.168.1.128:8080"
+
+# If tls.enable is true, frpc will connect frps by tls.
+# Since v0.50.0, the default value has been changed to true, and tls is enabled by default.
+transport.tls.enable = true
+
+# Heartbeat configure, it's not recommended to modify the default value.
+# The default value of heartbeatInterval is 10 and heartbeatTimeout is 90. Set negative value
+# to disable it.
+# transport.heartbeatInterval = 30
+# transport.heartbeatTimeout = 90
+
+# Specify a dns server, so frpc will use this instead of default one
+# dnsServer = "8.8.8.8"
+
+# Specify udp packet size, unit is byte. If not set, the default value is 1500.
+# This parameter should be same between client and server.
+# It affects the udp and sudp proxy.
+udpPacketSize = 1500
+
+# Feature gates allows you to enable or disable experimental features
+# featureGates = { VirtualNet = true }
+
+# ============================================================
+# [[proxies]] 和 [[visitors]] 段落已移除
+# 本项目中，代理配置由服务端在审批端口申请后自动创建。
+# 请使用 `frpc apply` 命令提交端口申请，无需手动编写代理配置。
+# ============================================================
 # This configuration file is for reference only. Please do not use this configuration directly to run the program as it may have various issues.
 
 # Optional unique identifier for this frpc instance.

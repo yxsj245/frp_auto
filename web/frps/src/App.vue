@@ -53,32 +53,12 @@
       >
         <nav class="sidebar-nav">
           <router-link
-            to="/"
+            to="/assistance"
             class="sidebar-link"
-            :class="{ active: route.path === '/' }"
+            :class="{ active: route.path.startsWith('/assistance') }"
             @click="closeSidebar"
           >
-            Overview
-          </router-link>
-          <router-link
-            to="/clients"
-            class="sidebar-link"
-            :class="{ active: route.path.startsWith('/clients') }"
-            @click="closeSidebar"
-          >
-            Clients
-          </router-link>
-          <router-link
-            to="/proxies"
-            class="sidebar-link"
-            :class="{
-              active:
-                route.path.startsWith('/proxies') ||
-                route.path.startsWith('/proxy'),
-            }"
-            @click="closeSidebar"
-          >
-            Proxies
+            远程协助
           </router-link>
         </nav>
       </aside>

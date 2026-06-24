@@ -31,7 +31,9 @@ func (svr *Service) registerRouteHandlers(helper *httppkg.RouterRegisterHelper) 
 
 	// API routes and static files with auth
 	subRouter := helper.Router.NewRoute().Subrouter()
-	subRouter.Use(helper.AuthMiddleware)
+	if helper.AuthMiddleware != nil {
+		subRouter.Use(helper.AuthMiddleware)
+	}
 	subRouter.Use(httppkg.NewRequestLogger)
 	subRouter.HandleFunc("/api/reload", httppkg.MakeHTTPHandlerFunc(apiController.Reload)).Methods(http.MethodGet)
 	subRouter.HandleFunc("/api/stop", httppkg.MakeHTTPHandlerFunc(apiController.Stop)).Methods(http.MethodPost)
@@ -40,19 +42,8 @@ func (svr *Service) registerRouteHandlers(helper *httppkg.RouterRegisterHelper) 
 	subRouter.HandleFunc("/api/config", httppkg.MakeHTTPHandlerFunc(apiController.PutConfig)).Methods(http.MethodPut)
 	subRouter.HandleFunc("/api/proxy/{name}/config", httppkg.MakeHTTPHandlerFunc(apiController.GetProxyConfig)).Methods(http.MethodGet)
 	subRouter.HandleFunc("/api/visitor/{name}/config", httppkg.MakeHTTPHandlerFunc(apiController.GetVisitorConfig)).Methods(http.MethodGet)
-
-	if svr.storeSource != nil {
-		subRouter.HandleFunc("/api/store/proxies", httppkg.MakeHTTPHandlerFunc(apiController.ListStoreProxies)).Methods(http.MethodGet)
-		subRouter.HandleFunc("/api/store/proxies", httppkg.MakeHTTPHandlerFunc(apiController.CreateStoreProxy)).Methods(http.MethodPost)
-		subRouter.HandleFunc("/api/store/proxies/{name}", httppkg.MakeHTTPHandlerFunc(apiController.GetStoreProxy)).Methods(http.MethodGet)
-		subRouter.HandleFunc("/api/store/proxies/{name}", httppkg.MakeHTTPHandlerFunc(apiController.UpdateStoreProxy)).Methods(http.MethodPut)
-		subRouter.HandleFunc("/api/store/proxies/{name}", httppkg.MakeHTTPHandlerFunc(apiController.DeleteStoreProxy)).Methods(http.MethodDelete)
-		subRouter.HandleFunc("/api/store/visitors", httppkg.MakeHTTPHandlerFunc(apiController.ListStoreVisitors)).Methods(http.MethodGet)
-		subRouter.HandleFunc("/api/store/visitors", httppkg.MakeHTTPHandlerFunc(apiController.CreateStoreVisitor)).Methods(http.MethodPost)
-		subRouter.HandleFunc("/api/store/visitors/{name}", httppkg.MakeHTTPHandlerFunc(apiController.GetStoreVisitor)).Methods(http.MethodGet)
-		subRouter.HandleFunc("/api/store/visitors/{name}", httppkg.MakeHTTPHandlerFunc(apiController.UpdateStoreVisitor)).Methods(http.MethodPut)
-		subRouter.HandleFunc("/api/store/visitors/{name}", httppkg.MakeHTTPHandlerFunc(apiController.DeleteStoreVisitor)).Methods(http.MethodDelete)
-	}
+	subRouter.HandleFunc("/api/apply", httppkg.MakeHTTPHandlerFunc(apiController.Apply)).Methods(http.MethodPost)
+	subRouter.HandleFunc("/api/applications", httppkg.MakeHTTPHandlerFunc(apiController.ListApplications)).Methods(http.MethodGet)
 
 	subRouter.Handle("/favicon.ico", http.FileServer(helper.AssetsFS)).Methods("GET")
 	subRouter.PathPrefix("/static/").Handler(
@@ -70,8 +61,10 @@ func healthz(w http.ResponseWriter, _ *http.Request) {
 func newAPIController(svr *Service) *adminapi.Controller {
 	manager := newServiceConfigManager(svr)
 	return adminapi.NewController(adminapi.ControllerParams{
-		ServerAddr: svr.common.ServerAddr,
-		Manager:    manager,
+		ServerAddr:        svr.common.ServerAddr,
+		Manager:           manager,
+		SubmitApplication: svr.SubmitApplication,
+		GetApplications:   svr.GetApplications,
 	})
 }
 

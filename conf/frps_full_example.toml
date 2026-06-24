@@ -1,3 +1,94 @@
+# ============================================================
+# 本项目已改造为远程协助专用模式
+# ------------------------------------------------------------
+# - allowPorts 配置控制可分配给客户端的端口范围
+# - webServer 面板用于管理员审批客户端端口申请
+# - 客户端通过 `frpc apply` 命令提交申请，管理员在面板中审批
+# - 审批通过后，frps 自动为对应客户端创建代理隧道
+# ============================================================
+
+# This configuration file is for reference only.
+
+# A literal address or host name for IPv6 must be enclosed
+# in square brackets, as in "[::1]:80", "[ipv6-host]:http" or "[ipv6-host%zone]:80"
+# For single "bindAddr" field, no need square brackets, like `bindAddr = "::"`.
+bindAddr = "0.0.0.0"
+bindPort = 7000
+
+# Only allow frpc to bind ports you list. By default, there won't be any limit.
+# 控制可分配的端口范围，远程协助模式建议限制在合理区间内
+allowPorts = [
+  { start = 10000, end = 20000 }
+]
+
+# Max ports can be used for each client, default value is 0 means no limit
+maxPortsPerClient = 0
+
+# Pool count in each proxy will keep no more than maxPoolCount.
+transport.maxPoolCount = 5
+
+# If tcp stream multiplexing is used, default is true
+# transport.tcpMux = true
+
+# transport.tls.force specifies whether to only accept TLS-encrypted connections. By default, the value is false.
+transport.tls.force = false
+
+# transport.tls.certFile = "server.crt"
+# transport.tls.keyFile = "server.key"
+# transport.tls.trustedCaFile = "ca.crt"
+
+# Heartbeat configure, it's not recommended to modify the default value
+# The default value of heartbeatTimeout is 90. Set negative value to disable it.
+# transport.heartbeatTimeout = 90
+
+# Configure the web server to enable the dashboard for frps.
+# dashboard is available only if webServer.port is set.
+# webServer 面板用于管理员审批端口申请
+webServer.addr = "0.0.0.0"
+webServer.port = 7500
+webServer.user = "admin"
+webServer.password = "admin"
+# webServer.tls.certFile = "server.crt"
+# webServer.tls.keyFile = "server.key"
+# dashboard assets directory(only for debug mode)
+# webServer.assetsDir = "./static"
+
+# Enable golang pprof handlers in dashboard listener.
+webServer.pprofEnable = false
+
+# enablePrometheus will export prometheus metrics on webServer in /metrics api.
+# enablePrometheus = true
+
+# console or real logFile path like ./frps.log
+log.to = "./frps.log"
+# trace, debug, info, warn, error
+log.level = "info"
+log.maxDays = 3
+# disable log colors when log.to is console, default is false
+log.disablePrintColor = false
+
+# DetailedErrorsToClient defines whether to send the specific error (with debug info) to frpc. By default, this value is true.
+detailedErrorsToClient = true
+
+# auth.method specifies what authentication method to use authenticate frpc with frps.
+# If "token" is specified - token will be read into login message.
+# By default, this value is "token".
+auth.method = "token"
+
+# auth token
+auth.token = ""
+
+# alternatively, you can use tokenSource to load the token from a file
+# this is mutually exclusive with auth.token
+# auth.tokenSource.type = "file"
+# auth.tokenSource.file.path = "/etc/frp/token"
+
+# specify udp packet size, unit is byte. If not set, the default value is 1500.
+# This parameter should be same between client and server.
+udpPacketSize = 1500
+
+# Retention time for NAT hole punching strategy data.
+natholeAnalysisDataReserveHours = 168
 # This configuration file is for reference only. Please do not use this configuration directly to run the program as it may have various issues.
 
 # A literal address or host name for IPv6 must be enclosed

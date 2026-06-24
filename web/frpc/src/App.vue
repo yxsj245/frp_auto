@@ -45,28 +45,12 @@
       <aside class="sidebar" :class="{ 'mobile-open': isMobile && sidebarOpen }">
         <nav class="sidebar-nav">
           <router-link
-            to="/proxies"
+            to="/apply"
             class="sidebar-link"
-            :class="{ active: route.path.startsWith('/proxies') }"
+            :class="{ active: route.path === '/apply' }"
             @click="closeSidebar"
           >
-            Proxies
-          </router-link>
-          <router-link
-            to="/visitors"
-            class="sidebar-link"
-            :class="{ active: route.path.startsWith('/visitors') }"
-            @click="closeSidebar"
-          >
-            Visitors
-          </router-link>
-          <router-link
-            to="/config"
-            class="sidebar-link"
-            :class="{ active: route.path === '/config' }"
-            @click="closeSidebar"
-          >
-            Config
+            端口申请
           </router-link>
         </nav>
       </aside>

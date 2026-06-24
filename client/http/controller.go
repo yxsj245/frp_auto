@@ -28,25 +28,30 @@ import (
 	"github.com/fatedier/frp/client/http/model"
 	"github.com/fatedier/frp/client/proxy"
 	httppkg "github.com/fatedier/frp/pkg/util/http"
-	"github.com/fatedier/frp/pkg/util/jsonx"
 )
 
 // Controller handles HTTP API requests for frpc.
 type Controller struct {
-	serverAddr string
-	manager    configmgmt.ConfigManager
+	serverAddr        string
+	manager           configmgmt.ConfigManager
+	submitApplication func([]int, []string, string) (string, error)
+	getApplications   func() []*model.ApplicationInfo
 }
 
 // ControllerParams contains parameters for creating an APIController.
 type ControllerParams struct {
-	ServerAddr string
-	Manager    configmgmt.ConfigManager
+	ServerAddr        string
+	Manager           configmgmt.ConfigManager
+	SubmitApplication func([]int, []string, string) (string, error)
+	GetApplications   func() []*model.ApplicationInfo
 }
 
 func NewController(params ControllerParams) *Controller {
 	return &Controller{
-		serverAddr: params.ServerAddr,
-		manager:    params.Manager,
+		serverAddr:        params.ServerAddr,
+		manager:           params.Manager,
+		submitApplication: params.SubmitApplication,
+		getApplications:   params.GetApplications,
 	}
 }
 
@@ -200,234 +205,28 @@ func (c *Controller) GetVisitorConfig(ctx *httppkg.Context) (any, error) {
 	return payload, nil
 }
 
-func (c *Controller) ListStoreProxies(ctx *httppkg.Context) (any, error) {
-	proxies, err := c.manager.ListStoreProxies()
-	if err != nil {
-		return nil, c.toHTTPError(err)
-	}
-
-	resp := model.ProxyListResp{Proxies: make([]model.ProxyDefinition, 0, len(proxies))}
-	for _, p := range proxies {
-		payload, err := model.ProxyDefinitionFromConfigurer(p)
-		if err != nil {
-			return nil, httppkg.NewError(http.StatusInternalServerError, err.Error())
-		}
-		resp.Proxies = append(resp.Proxies, payload)
-	}
-	slices.SortFunc(resp.Proxies, func(a, b model.ProxyDefinition) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
-	return resp, nil
-}
-
-func (c *Controller) GetStoreProxy(ctx *httppkg.Context) (any, error) {
-	name := ctx.Param("name")
-	if name == "" {
-		return nil, httppkg.NewError(http.StatusBadRequest, "proxy name is required")
-	}
-
-	p, err := c.manager.GetStoreProxy(name)
-	if err != nil {
-		return nil, c.toHTTPError(err)
-	}
-
-	payload, err := model.ProxyDefinitionFromConfigurer(p)
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusInternalServerError, err.Error())
-	}
-
-	return payload, nil
-}
-
-func (c *Controller) CreateStoreProxy(ctx *httppkg.Context) (any, error) {
-	body, err := ctx.Body()
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, fmt.Sprintf("read body error: %v", err))
-	}
-
-	var payload model.ProxyDefinition
-	if err := jsonx.Unmarshal(body, &payload); err != nil {
+// Apply handles POST /api/apply
+func (c *Controller) Apply(ctx *httppkg.Context) (any, error) {
+	var req model.ApplyRequest
+	if err := ctx.BindJSON(&req); err != nil {
 		return nil, httppkg.NewError(http.StatusBadRequest, fmt.Sprintf("parse JSON error: %v", err))
 	}
-
-	if err := payload.Validate("", false); err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, err.Error())
-	}
-	cfg, err := payload.ToConfigurer()
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, err.Error())
-	}
-	created, err := c.manager.CreateStoreProxy(cfg)
-	if err != nil {
-		return nil, c.toHTTPError(err)
+	if len(req.Ports) == 0 {
+		return nil, httppkg.NewError(http.StatusBadRequest, "ports is required")
 	}
 
-	resp, err := model.ProxyDefinitionFromConfigurer(created)
+	types := req.Types
+	if len(types) == 0 {
+		types = []string{"tcp"}
+	}
+	code, err := c.submitApplication(req.Ports, types, req.Remark)
 	if err != nil {
 		return nil, httppkg.NewError(http.StatusInternalServerError, err.Error())
 	}
-	return resp, nil
+	return model.ApplyResponse{Status: "submitted", Code: code}, nil
 }
 
-func (c *Controller) UpdateStoreProxy(ctx *httppkg.Context) (any, error) {
-	name := ctx.Param("name")
-	if name == "" {
-		return nil, httppkg.NewError(http.StatusBadRequest, "proxy name is required")
-	}
-
-	body, err := ctx.Body()
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, fmt.Sprintf("read body error: %v", err))
-	}
-
-	var payload model.ProxyDefinition
-	if err := jsonx.Unmarshal(body, &payload); err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, fmt.Sprintf("parse JSON error: %v", err))
-	}
-
-	if err := payload.Validate(name, true); err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, err.Error())
-	}
-	cfg, err := payload.ToConfigurer()
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, err.Error())
-	}
-	updated, err := c.manager.UpdateStoreProxy(name, cfg)
-	if err != nil {
-		return nil, c.toHTTPError(err)
-	}
-
-	resp, err := model.ProxyDefinitionFromConfigurer(updated)
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusInternalServerError, err.Error())
-	}
-	return resp, nil
-}
-
-func (c *Controller) DeleteStoreProxy(ctx *httppkg.Context) (any, error) {
-	name := ctx.Param("name")
-	if name == "" {
-		return nil, httppkg.NewError(http.StatusBadRequest, "proxy name is required")
-	}
-
-	if err := c.manager.DeleteStoreProxy(name); err != nil {
-		return nil, c.toHTTPError(err)
-	}
-	return nil, nil
-}
-
-func (c *Controller) ListStoreVisitors(ctx *httppkg.Context) (any, error) {
-	visitors, err := c.manager.ListStoreVisitors()
-	if err != nil {
-		return nil, c.toHTTPError(err)
-	}
-
-	resp := model.VisitorListResp{Visitors: make([]model.VisitorDefinition, 0, len(visitors))}
-	for _, v := range visitors {
-		payload, err := model.VisitorDefinitionFromConfigurer(v)
-		if err != nil {
-			return nil, httppkg.NewError(http.StatusInternalServerError, err.Error())
-		}
-		resp.Visitors = append(resp.Visitors, payload)
-	}
-	slices.SortFunc(resp.Visitors, func(a, b model.VisitorDefinition) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
-	return resp, nil
-}
-
-func (c *Controller) GetStoreVisitor(ctx *httppkg.Context) (any, error) {
-	name := ctx.Param("name")
-	if name == "" {
-		return nil, httppkg.NewError(http.StatusBadRequest, "visitor name is required")
-	}
-
-	v, err := c.manager.GetStoreVisitor(name)
-	if err != nil {
-		return nil, c.toHTTPError(err)
-	}
-
-	payload, err := model.VisitorDefinitionFromConfigurer(v)
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusInternalServerError, err.Error())
-	}
-
-	return payload, nil
-}
-
-func (c *Controller) CreateStoreVisitor(ctx *httppkg.Context) (any, error) {
-	body, err := ctx.Body()
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, fmt.Sprintf("read body error: %v", err))
-	}
-
-	var payload model.VisitorDefinition
-	if err := jsonx.Unmarshal(body, &payload); err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, fmt.Sprintf("parse JSON error: %v", err))
-	}
-
-	if err := payload.Validate("", false); err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, err.Error())
-	}
-	cfg, err := payload.ToConfigurer()
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, err.Error())
-	}
-	created, err := c.manager.CreateStoreVisitor(cfg)
-	if err != nil {
-		return nil, c.toHTTPError(err)
-	}
-
-	resp, err := model.VisitorDefinitionFromConfigurer(created)
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusInternalServerError, err.Error())
-	}
-	return resp, nil
-}
-
-func (c *Controller) UpdateStoreVisitor(ctx *httppkg.Context) (any, error) {
-	name := ctx.Param("name")
-	if name == "" {
-		return nil, httppkg.NewError(http.StatusBadRequest, "visitor name is required")
-	}
-
-	body, err := ctx.Body()
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, fmt.Sprintf("read body error: %v", err))
-	}
-
-	var payload model.VisitorDefinition
-	if err := jsonx.Unmarshal(body, &payload); err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, fmt.Sprintf("parse JSON error: %v", err))
-	}
-
-	if err := payload.Validate(name, true); err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, err.Error())
-	}
-	cfg, err := payload.ToConfigurer()
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusBadRequest, err.Error())
-	}
-	updated, err := c.manager.UpdateStoreVisitor(name, cfg)
-	if err != nil {
-		return nil, c.toHTTPError(err)
-	}
-
-	resp, err := model.VisitorDefinitionFromConfigurer(updated)
-	if err != nil {
-		return nil, httppkg.NewError(http.StatusInternalServerError, err.Error())
-	}
-	return resp, nil
-}
-
-func (c *Controller) DeleteStoreVisitor(ctx *httppkg.Context) (any, error) {
-	name := ctx.Param("name")
-	if name == "" {
-		return nil, httppkg.NewError(http.StatusBadRequest, "visitor name is required")
-	}
-
-	if err := c.manager.DeleteStoreVisitor(name); err != nil {
-		return nil, c.toHTTPError(err)
-	}
-	return nil, nil
+// ListApplications handles GET /api/applications
+func (c *Controller) ListApplications(ctx *httppkg.Context) (any, error) {
+	return c.getApplications(), nil
 }

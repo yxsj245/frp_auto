@@ -40,10 +40,17 @@ func TestV1MessageTypeIDsAreStable(t *testing.T) {
 	require.Equal(t, byte('m'), TypeNatHoleResp)
 	require.Equal(t, byte('5'), TypeNatHoleSid)
 	require.Equal(t, byte('6'), TypeNatHoleReport)
+	require.Equal(t, byte('A'), TypePortApplication)
+	require.Equal(t, byte('B'), TypePortApplicationResp)
+	require.Equal(t, byte('D'), TypeApprovalNotify)
+	require.Equal(t, byte('E'), TypeCloseAssistance)
+	require.Equal(t, byte('F'), TypePauseAssistance)
+	require.Equal(t, byte('G'), TypeResumeAssistance)
+	require.Equal(t, byte('H'), TypeDisconnectAssistance)
 }
 
 func TestMessageTypeMapIsCompleteAndUnique(t *testing.T) {
-	require.Len(t, msgTypeMap, 18)
+	require.Len(t, msgTypeMap, 25)
 
 	msgTypes := make(map[reflect.Type]struct{}, len(msgTypeMap))
 

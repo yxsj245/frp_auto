@@ -3,6 +3,7 @@ package ports
 import (
 	"errors"
 	"net"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -37,6 +38,8 @@ type Manager struct {
 	reservedPorts map[string]*PortCtx
 	usedPorts     map[int]*PortCtx
 	freePorts     map[int]struct{}
+	allowRanges   []types.PortsRange
+	nextScanPort  int
 
 	bindAddr string
 	netType  string
@@ -56,6 +59,7 @@ func newManagerWithClock(netType string, bindAddr string, allowPorts []types.Por
 		reservedPorts: make(map[string]*PortCtx),
 		usedPorts:     make(map[int]*PortCtx),
 		freePorts:     make(map[int]struct{}),
+		allowRanges:   allowPorts,
 		bindAddr:      bindAddr,
 		netType:       netType,
 		clock:         clk,
@@ -70,10 +74,13 @@ func newManagerWithClock(netType string, bindAddr string, allowPorts []types.Por
 				}
 			}
 		}
+		// Set nextScanPort to the first port of the first range
+		pm.nextScanPort = pm.getFirstRangePort()
 	} else {
 		for i := MinPort; i <= MaxPort; i++ {
 			pm.freePorts[i] = struct{}{}
 		}
+		pm.nextScanPort = MinPort
 	}
 	go pm.cleanReservedPortsWorker()
 	return pm
@@ -108,22 +115,12 @@ func (pm *Manager) Acquire(name string, port int) (realPort int, err error) {
 	}
 
 	if port == 0 {
-		// get random port
-		count := 0
-		maxTryTimes := 5
-		for k := range pm.freePorts {
-			count++
-			if count > maxTryTimes {
-				break
-			}
-			if pm.isPortAvailable(k) {
-				realPort = k
-				pm.markPortAcquiredLocked(name, realPort, portCtx)
-				break
-			}
-		}
+		// Sequential allocation: scan forward from the last allocated port
+		realPort = pm.scanNextFreePort()
 		if realPort == 0 {
 			err = ErrNoAvailablePort
+		} else {
+			pm.markPortAcquiredLocked(name, realPort, portCtx)
 		}
 	} else {
 		// specified port
@@ -150,6 +147,82 @@ func (pm *Manager) markPortAcquiredLocked(name string, port int, portCtx *PortCt
 	pm.usedPorts[port] = portCtx
 	pm.reservedPorts[name] = portCtx
 	delete(pm.freePorts, port)
+}
+
+// getFirstRangePort returns the first port in the allowed ranges.
+func (pm *Manager) getFirstRangePort() int {
+	if len(pm.allowRanges) == 0 {
+		return MinPort
+	}
+	first := pm.allowRanges[0]
+	if first.Single > 0 {
+		return first.Single
+	}
+	return first.Start
+}
+
+// scanNextFreePort scans forward from pm.nextScanPort to find the next free port.
+// It wraps around the allowed ranges if needed.
+func (pm *Manager) scanNextFreePort() int {
+	if len(pm.allowRanges) == 0 {
+		// No allowPorts configured, scan full range
+		for retries := 0; retries < (MaxPort - MinPort + 1); retries++ {
+			port := pm.nextScanPort
+			pm.nextScanPort++
+			if pm.nextScanPort > MaxPort {
+				pm.nextScanPort = MinPort
+			}
+			if _, free := pm.freePorts[port]; free {
+				if pm.isPortAvailable(port) {
+					return port
+				}
+			}
+		}
+		return 0
+	}
+
+	// Collect and sort all allowed ports for sequential scanning
+	allAllowed := make([]int, 0)
+	for _, r := range pm.allowRanges {
+		if r.Single > 0 {
+			allAllowed = append(allAllowed, r.Single)
+		} else {
+			for i := r.Start; i <= r.End; i++ {
+				allAllowed = append(allAllowed, i)
+			}
+		}
+	}
+	sort.Ints(allAllowed)
+
+	if len(allAllowed) == 0 {
+		return 0
+	}
+
+	// Find current position in the sorted list
+	startIdx := 0
+	for i, p := range allAllowed {
+		if p >= pm.nextScanPort {
+			startIdx = i
+			break
+		}
+	}
+
+	// Scan forward from current position
+	for i := 0; i < len(allAllowed); i++ {
+		idx := (startIdx + i) % len(allAllowed)
+		port := allAllowed[idx]
+		if _, free := pm.freePorts[port]; free {
+			if pm.isPortAvailable(port) {
+				// Advance cursor past this port for next allocation
+				pm.nextScanPort = port + 1
+				if pm.nextScanPort > allAllowed[len(allAllowed)-1] {
+					pm.nextScanPort = allAllowed[0]
+				}
+				return port
+			}
+		}
+	}
+	return 0
 }
 
 func (pm *Manager) isPortAvailable(port int) bool {
